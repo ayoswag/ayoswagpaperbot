@@ -1,0 +1,5 @@
+{
+  "buildpacks": [
+    "https://github.com/railwayapp/railway-buildpack-wkhtmltopdf.git"
+  ]
+}
