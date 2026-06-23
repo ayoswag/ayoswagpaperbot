@@ -1,13 +1,14 @@
-
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, ContextTypes, filters, CommandHandler, CallbackQueryHandler
 from docxtpl import DocxTemplate
 from datetime import datetime
 import os
-from docx2pdf import convert
+import pdfkit
 
-with open("token.txt", "r", encoding="utf-8") as f:
-    TOKEN = f.read().strip()
+# Получаем токен из переменных окружения (безопасно для сервера)
+TOKEN = os.getenv("BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("Переменная окружения BOT_TOKEN не установлена!")
 
 # Словарь с типами договоров
 CONTRACT_TYPES = {
@@ -22,9 +23,6 @@ CONTRACT_TYPES = {
         "description": "Аренда бита (Unlimited Lease)"
     }
 }
-
-# Ожидаемый порядок полей (теперь 7 полей)
-FIELD_ORDER = ["beat", "artist", "nick", "address", "price", "publishing", "date"]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /start - показывает меню выбора договора"""
@@ -127,7 +125,6 @@ async def generate_contract(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Генерируем договор
     publishing = int(data["publishing"])
     producer_publishing = 100 - publishing
-    # Используем дату, которую ввел пользователь
     contract_date = data["date"] if data["date"] else datetime.now().strftime("%m.%d.%y")
     
     doc = DocxTemplate(template_file)
@@ -142,7 +139,7 @@ async def generate_contract(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "DATE": contract_date
     })
     
-    # Формируем название файла
+    # Формируем название файла (БЕЗ кавычек)
     if contract_type == "exclusive":
         filename = f"Exclusive Rights for {data['beat']} beat for {data['artist']}.docx"
     else:
@@ -155,18 +152,25 @@ async def generate_contract(update: Update, context: ContextTypes.DEFAULT_TYPE):
         document=open(filename, "rb")
     )
     
-    # Конвертация в PDF
-    pdf_filename = filename.replace('.docx', '.pdf')
-    convert(filename, pdf_filename)
+    # Конвертация в PDF (для Linux/Railway)
+    #try:
+    #    pdf_filename = filename.replace('.docx', '.pdf')
+    #    config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')
+     #   pdfkit.from_file(filename, pdf_filename, configuration=config)
+        
+    #   # Отправка PDF
+     #   await update.message.reply_document(
+     #       document=open(pdf_filename, "rb")
+    #    )
+    #    os.remove(pdf_filename)
+   # except Exception as e:
+   #     print(f"Ошибка конвертации в PDF: {e}")
+    #    await update.message.reply_text(
+    #        "⚠️ Не удалось создать PDF, но DOCX отправлен."
+      #  )
     
-    # Отправка PDF
-    await update.message.reply_document(
-        document=open(pdf_filename, "rb")
-    )
-    
-    # Удаляем файлы
+    # Удаляем DOCX
     os.remove(filename)
-    os.remove(pdf_filename)
     
     # Сбрасываем выбранный тип договора
     context.user_data['contract_type'] = None
@@ -179,13 +183,8 @@ async def generate_contract(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(TOKEN).build()
     
-    # Команды
     app.add_handler(CommandHandler("start", start))
-    
-    # Обработка кнопок
     app.add_handler(CallbackQueryHandler(button_handler))
-    
-    # Обработка текстовых сообщений
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
