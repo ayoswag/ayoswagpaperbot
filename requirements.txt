@@ -1,3 +1,4 @@
 python-telegram-bot==22.3
-weasyprint
-jinja2
+docxtpl
+lxml
+python-docx
