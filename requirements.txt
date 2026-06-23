@@ -3,3 +3,4 @@ docxtpl
 pdfkit
 lxml
 python-docx
+markdown
