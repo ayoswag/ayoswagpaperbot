@@ -6,10 +6,21 @@ import os
 import pdfkit
 from docx import Document
 
-# Получаем токен из переменных окружения (безопасно для сервера)
+# ПЫТАЕМСЯ получить токен из переменной окружения
 TOKEN = os.getenv("BOT_TOKEN")
+
+# Если переменной нет — читаем из файла
 if not TOKEN:
-    raise ValueError("Переменная окружения BOT_TOKEN не установлена!")
+    try:
+        with open("token.txt", "r", encoding="utf-8") as f:
+            TOKEN = f.read().strip()
+        print("Токен загружен из файла token.txt")
+    except FileNotFoundError:
+        raise ValueError("❌ Токен не найден! Создай файл token.txt или добавь переменную BOT_TOKEN")
+
+# Проверяем, что токен не пустой
+if not TOKEN:
+    raise ValueError("❌ Токен пустой! Проверь файл token.txt или переменную BOT_TOKEN")
 
 # Словарь с типами договоров
 CONTRACT_TYPES = {
