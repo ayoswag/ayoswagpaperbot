@@ -4,9 +4,12 @@ from docxtpl import DocxTemplate
 from datetime import datetime
 import os
 import pdfkit
+from docx import Document
 
-with open("token.txt", "r", encoding="utf-8") as f:
-    TOKEN = f.read().strip()
+# Получаем токен из переменных окружения (безопасно для сервера)
+TOKEN = os.getenv("BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("Переменная окружения BOT_TOKEN не установлена!")
 
 # Словарь с типами договоров
 CONTRACT_TYPES = {
@@ -21,6 +24,24 @@ CONTRACT_TYPES = {
         "description": "Аренда бита (Unlimited Lease)"
     }
 }
+
+def docx_to_html(docx_path):
+    """Конвертирует DOCX в HTML для последующей конвертации в PDF"""
+    doc = Document(docx_path)
+    html = []
+    for paragraph in doc.paragraphs:
+        if paragraph.text.strip():
+            html.append(f"<p>{paragraph.text}</p>")
+    # Добавляем таблицы
+    for table in doc.tables:
+        html.append("<table border='1' cellpadding='5'>")
+        for row in table.rows:
+            html.append("<tr>")
+            for cell in row.cells:
+                html.append(f"<td>{cell.text}</td>")
+            html.append("</tr>")
+        html.append("</table>")
+    return "".join(html)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /start - показывает меню выбора договора"""
@@ -137,44 +158,48 @@ async def generate_contract(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "DATE": contract_date
     })
     
-    # Формируем название файла (БЕЗ кавычек)
+    # Формируем название файла
     if contract_type == "exclusive":
         filename = f"Exclusive Rights for {data['beat']} beat for {data['artist']}.docx"
     else:
         filename = f"Unlimited Lease for {data['beat']} beat for {data['artist']}.docx"
     
     doc.save(filename)
-    
-    # Отправка DOCX
-    await update.message.reply_document(
-        document=open(filename, "rb")
-    )
-    
-    # Конвертация в PDF (для Linux/Railway)
-    #try:
-    #    pdf_filename = filename.replace('.docx', '.pdf')
-    #    config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')
-     #   pdfkit.from_file(filename, pdf_filename, configuration=config)
+
+    # 1. ВСЕГДА отправляем DOCX
+    await update.message.reply_document(document=open(filename, "rb"))
+
+    # 2. КОНВЕРТАЦИЯ В PDF через wkhtmltopdf
+    try:
+        pdf_filename = filename.replace('.docx', '.pdf')
         
-    #   # Отправка PDF
-     #   await update.message.reply_document(
-     #       document=open(pdf_filename, "rb")
-    #    )
-    #    os.remove(pdf_filename)
-   # except Exception as e:
-   #     print(f"Ошибка конвертации в PDF: {e}")
-    #    await update.message.reply_text(
-    #        "⚠️ Не удалось создать PDF, но DOCX отправлен."
-      #  )
-    
-    # Удаляем DOCX
+        # Конвертируем DOCX в HTML
+        html_content = docx_to_html(filename)
+        
+        # Указываем путь к wkhtmltopdf на Railway
+        config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')
+        
+        # Создаём PDF из HTML
+        pdfkit.from_string(html_content, pdf_filename, configuration=config)
+        
+        # Отправляем PDF
+        await update.message.reply_document(document=open(pdf_filename, "rb"))
+        os.remove(pdf_filename)
+        print(f"PDF создан и отправлен: {pdf_filename}")
+    except Exception as e:
+        print(f"PDF не создан: {e}")
+        await update.message.reply_text(
+            "⚠️ Не удалось создать PDF, но DOCX отправлен."
+        )
+
+    # 3. Удаляем DOCX
     os.remove(filename)
     
     # Сбрасываем выбранный тип договора
     context.user_data['contract_type'] = None
     
     await update.message.reply_text(
-        "✅ Готово! Договоры отправлены.\n"
+        "✅ Готово! Договор отправлен.\n"
         "Чтобы создать новый - нажми /start"
     )
 
