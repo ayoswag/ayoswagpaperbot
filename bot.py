@@ -5,10 +5,8 @@ from datetime import datetime
 import os
 import pdfkit
 
-# Получаем токен из переменных окружения (безопасно для сервера)
-TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("Переменная окружения BOT_TOKEN не установлена!")
+with open("token.txt", "r", encoding="utf-8") as f:
+    TOKEN = f.read().strip()
 
 # Словарь с типами договоров
 CONTRACT_TYPES = {
