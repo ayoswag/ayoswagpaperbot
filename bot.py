@@ -1,61 +1,159 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, ContextTypes, filters, CommandHandler, CallbackQueryHandler
-from docxtpl import DocxTemplate
 from datetime import datetime
 import os
-import pdfkit
-from docx import Document
+from weasyprint import HTML
+from jinja2 import Template
 
-# ПЫТАЕМСЯ получить токен из переменной окружения
 TOKEN = os.getenv("BOT_TOKEN")
-
-# Если переменной нет — читаем из файла
 if not TOKEN:
     try:
         with open("token.txt", "r", encoding="utf-8") as f:
             TOKEN = f.read().strip()
-        print("Токен загружен из файла token.txt")
+        print("✅ Токен загружен из файла token.txt")
     except FileNotFoundError:
-        raise ValueError("❌ Токен не найден! Создай файл token.txt или добавь переменную BOT_TOKEN")
+        raise ValueError("❌ Токен не найден!")
 
-# Проверяем, что токен не пустой
-if not TOKEN:
-    raise ValueError("❌ Токен пустой! Проверь файл token.txt или переменную BOT_TOKEN")
-
-# Словарь с типами договоров
 CONTRACT_TYPES = {
     "exclusive": {
         "name": "Exclusive Rights",
-        "template": "contract_template.docx",
         "description": "Эксклюзивные права на бит"
     },
     "rent": {
         "name": "Unlimited Lease",
-        "template": "rent_template.docx",
         "description": "Аренда бита (Unlimited Lease)"
     }
 }
 
-def docx_to_html(docx_path):
-    """Конвертирует DOCX в HTML для последующей конвертации в PDF"""
-    doc = Document(docx_path)
-    html = []
-    for paragraph in doc.paragraphs:
-        if paragraph.text.strip():
-            html.append(f"<p>{paragraph.text}</p>")
-    # Добавляем таблицы
-    for table in doc.tables:
-        html.append("<table border='1' cellpadding='5'>")
-        for row in table.rows:
-            html.append("<tr>")
-            for cell in row.cells:
-                html.append(f"<td>{cell.text}</td>")
-            html.append("</tr>")
-        html.append("</table>")
-    return "".join(html)
+# Шаблон договора в HTML (полностью стилизованный)
+def get_contract_html(data, contract_type):
+    publishing = int(data["publishing"])
+    producer_publishing = 100 - publishing
+    
+    html_template = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Contract</title>
+        <style>
+            body {
+                font-family: 'Times New Roman', Times, serif;
+                font-size: 12pt;
+                margin: 40px;
+                line-height: 1.5;
+            }
+            h1 {
+                text-align: center;
+                font-size: 16pt;
+                text-transform: uppercase;
+                text-decoration: underline;
+                margin-bottom: 30px;
+            }
+            .header {
+                text-align: center;
+                margin-bottom: 25px;
+            }
+            .section-title {
+                font-weight: bold;
+                margin-top: 15px;
+            }
+            .signature {
+                margin-top: 30px;
+                width: 100%;
+            }
+            .signature-line {
+                margin-top: 40px;
+                border-top: 1px solid black;
+                width: 200px;
+                display: inline-block;
+            }
+            .publishing-section {
+                margin-top: 20px;
+                padding: 10px;
+                border: 1px solid #ccc;
+                background-color: #f9f9f9;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>License Agreement For Beat "{{ BEAT }}"</h1>
+        
+        <p><strong>THIS LICENCE AGREEMENT</strong> is made on {{ DATE }} ("Effective Date") by and between <strong>{{ ARTIST }}</strong> (hereinafter referred to as the "Licensee") also, if applicable, professionally known as <strong>{{ NICK }}</strong>, whose principle address is <strong>{{ ADDRESS }}</strong>, and <strong>Dan White</strong> (hereinafter referred to as the "Licensor") also, if applicable, professionally known as Ayoswag, whose principle address is Vologda, Russia.</p>
+        
+        <p>Licensor warrants that it controls the mechanical rights in and to the copyrighted musical works entitled <strong>"{{ BEAT }}"</strong> ("Composition") as of and prior to the date first written above. The Composition, including the music thereof, was composed by White Dan ("Producer") managed under the Licensor.</p>
+        
+        <div class="section-title">Master Use.</div>
+        <p>The Licensor hereby grants to Licensee an exclusive license (this "License") to record vocal synchronization to the Composition partly or in its entirety and substantially in its original form ("Master Recording").</p>
+        
+        <div class="section-title">Mechanical Rights.</div>
+        <p>The Licensor hereby grants to Licensee an exclusive license to use Master Recording in the reproduction, duplication, manufacture, and distribution of phonograph records, cassette tapes, compact disk, digital downloads, other miscellaneous audio and digital recordings, and any lifts and versions thereof (collectively, the "Recordings", and individually, a "Recordings") worldwide for unlimited copies of such Recordings or any combination of such Recordings, condition upon the payment to the Licensor a sum of <strong>${{ PRICE }} USD</strong>, receipt of which is confirmed.</p>
+        
+        <div class="section-title">Performance Rights.</div>
+        <p>The Licensor hereby grants to Licensee an exclusive license to use the Master Recording in unlimited for-profit performances, shows, or concerts.</p>
+        
+        <div class="section-title">Broadcast Rights.</div>
+        <p>The Licensor hereby grants to Licensee an exclusive license to broadcast or air the Master Recording in unlimited amounts of radio stations.</p>
+        
+        <div class="section-title">Credit.</div>
+        <p>Licensee shall acknowledge the original authorship of the Composition appropriately and reasonably in all media and performance formats under the name "Ayoswag" in writing where possible and vocally otherwise.</p>
+        
+        <div class="section-title">Consideration.</div>
+        <p>In consideration for the rights granted under this agreement, Licensee shall pay to Licensor the sum of <strong>${{ PRICE }} USD</strong> and other good and valuable consideration, payable to "White Dan", receipt of which is hereby acknowledged.</p>
+        
+        <div class="section-title">Delivery.</div>
+        <p>The Composition shall be delivered via email to an email address that Licensee provided when making their payment to Licensor.</p>
+        
+        <div class="section-title">Indemnification.</div>
+        <p>Licensee agrees to indemnify and hold Licensor harmless from and against any and all claims, losses, damages, costs, expenses, including, without limitation, reasonable attorney's fees, arising of or resulting from a claimed breach of any of Licensee's representations, warranties or agreements hereunder.</p>
+        
+        <div class="section-title">Audio Samples.</div>
+        <p>3rd party sample clearance is the responsibility of the Licensee.</p>
+        
+        <div class="section-title">Miscellaneous.</div>
+        <p>This license is non-transferable and is limited to the Composition specified above, constitutes the entire agreement between the Licensor and the Licensee relating to the Composition, and shall be binding upon both the Licensor and the Licensee and their respective successors, assigns, and legal representatives.</p>
+        
+        <div class="section-title">Governing Law.</div>
+        <p>This License is governed by and shall be construed under the law of Vologda, Russia, without regard to the conflicts of laws principles thereof.</p>
+        
+        <div class="publishing-section">
+            <p><strong>Publishing.</strong></p>
+            <p>{{ ARTIST }} owns <strong>{{ PUBLISHING }}%</strong> of publishing rights.</p>
+            <p>Dan White owns <strong>{{ PRODUCER_PUBLISHING }}%</strong> of publishing rights.</p>
+        </div>
+        
+        <p>Finished audio recording by Licensee of audio release can be distributed to music supervisors for synchronization licensing. This license includes synchronization rights for the TV, Film, and Video game industry. The Licensee is authorized to monetize and clear synchronization placements for these media under the terms of this agreement.</p>
+        
+        <div class="signature">
+            <p><strong>THE PARTIES HAVE DULY EXECUTED THIS AGREEMENT on the date first written above.</strong></p>
+            <br><br>
+            <p><strong>Licensor:</strong></p>
+            <div class="signature-line">Dan White - Producer</div>
+            <br>
+            <p>Date: {{ DATE }}</p>
+            <br><br>
+            <p><strong>Licensee:</strong></p>
+            <div class="signature-line">{{ ARTIST }} - Artist</div>
+            <br>
+            <p>Date: {{ DATE }}</p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    template = Template(html_template)
+    return template.render({
+        "BEAT": data["beat"],
+        "ARTIST": data["artist"],
+        "NICK": data["nick"],
+        "ADDRESS": data["address"],
+        "PRICE": data["price"],
+        "PUBLISHING": publishing,
+        "PRODUCER_PUBLISHING": producer_publishing,
+        "DATE": data["date"] if data["date"] else datetime.now().strftime("%m.%d.%y")
+    })
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /start - показывает меню выбора договора"""
     keyboard = [
         [
             InlineKeyboardButton("📄 Exclusive Rights", callback_data="exclusive"),
@@ -70,16 +168,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка нажатия кнопок"""
     query = update.callback_query
     await query.answer()
-    
     contract_type = query.data
     context.user_data['contract_type'] = contract_type
-    
-    template_name = CONTRACT_TYPES[contract_type]["name"]
     await query.edit_message_text(
-        f"✅ Выбран: {template_name}\n\n"
+        f"✅ Выбран: {CONTRACT_TYPES[contract_type]['name']}\n\n"
         "Теперь отправь данные в таком порядке (каждое с новой строки):\n\n"
         "1️⃣ Название бита\n"
         "2️⃣ Имя артиста\n"
@@ -99,34 +193,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def generate_contract(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Генерация договора из данных"""
     text = update.message.text
     lines = text.split("\n")
     
-    # Проверяем, что пользователь выбрал тип договора
     if 'contract_type' not in context.user_data:
-        await update.message.reply_text(
-            "⚠️ Сначала выбери тип договора через /start"
-        )
+        await update.message.reply_text("⚠️ Сначала выбери тип договора через /start")
         return
     
-    # Проверяем, что ввел ровно 7 строк
     if len(lines) < 7:
         await update.message.reply_text(
             f"❌ Нужно ввести ровно 7 строк!\n"
-            f"Ты ввел {len(lines)} строк.\n\n"
-            "Отправь данные в таком порядке:\n"
-            "1. Название бита\n"
-            "2. Имя артиста\n"
-            "3. Никнейм\n"
-            "4. Адрес\n"
-            "5. Цена (только цифры)\n"
-            "6. Процент паблишинга (только цифры)\n"
-            "7. Дата (в формате MM.DD.YY)"
+            f"Ты ввел {len(lines)} строк."
         )
         return
     
-    # Собираем данные в словарь
     data = {
         "beat": lines[0].strip(),
         "artist": lines[1].strip(),
@@ -137,95 +217,42 @@ async def generate_contract(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "date": lines[6].strip()
     }
     
-    # Проверяем, что цена и паблишинг - числа
     try:
         int(data["price"])
         int(data["publishing"])
     except ValueError:
-        await update.message.reply_text(
-            "❌ Цена и паблишинг должны быть числами!\n"
-            "Попробуй еще раз."
-        )
+        await update.message.reply_text("❌ Цена и паблишинг должны быть числами!")
         return
     
-    # Выбираем шаблон
     contract_type = context.user_data['contract_type']
-    template_file = CONTRACT_TYPES[contract_type]["template"]
     
-    # Генерируем договор
-    publishing = int(data["publishing"])
-    producer_publishing = 100 - publishing
-    contract_date = data["date"] if data["date"] else datetime.now().strftime("%m.%d.%y")
+    # Генерируем HTML-контент
+    html_content = get_contract_html(data, contract_type)
     
-    doc = DocxTemplate(template_file)
-    doc.render({
-        "BEAT": data["beat"],
-        "ARTIST": data["artist"],
-        "NICK": data["nick"],
-        "ADDRESS": data["address"],
-        "PRICE": data["price"],
-        "PUBLISHING": publishing,
-        "PRODUCER_PUBLISHING": producer_publishing,
-        "DATE": contract_date
-    })
+    # Создаём PDF
+    pdf_filename = f"{data['artist']}_{data['beat']}_{contract_type}.pdf"
+    HTML(string=html_content).write_pdf(pdf_filename)
     
-    # Формируем название файла
-    if contract_type == "exclusive":
-        filename = f"Exclusive Rights for {data['beat']} beat for {data['artist']}.docx"
-    else:
-        filename = f"Unlimited Lease for {data['beat']} beat for {data['artist']}.docx"
+    # Отправляем PDF
+    await update.message.reply_document(
+        document=open(pdf_filename, "rb"),
+        filename=pdf_filename
+    )
     
-    doc.save(filename)
-
-    # 1. ВСЕГДА отправляем DOCX
-    await update.message.reply_document(document=open(filename, "rb"))
-
-    # 2. КОНВЕРТАЦИЯ В PDF через wkhtmltopdf
-    try:
-        pdf_filename = filename.replace('.docx', '.pdf')
-        
-        # Конвертируем DOCX в HTML
-        html_content = docx_to_html(filename)
-        
-        # Указываем путь к wkhtmltopdf на Railway
-        config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')
-        
-        # Создаём PDF из HTML
-        pdfkit.from_string(html_content, pdf_filename, configuration=config)
-        
-        # Отправляем PDF
-        await update.message.reply_document(document=open(pdf_filename, "rb"))
-        os.remove(pdf_filename)
-        print(f"PDF создан и отправлен: {pdf_filename}")
-    except Exception as e:
-        print(f"PDF не создан: {e}")
-        await update.message.reply_text(
-            "⚠️ Не удалось создать PDF, но DOCX отправлен."
-        )
-
-    # 3. Удаляем DOCX
-    os.remove(filename)
+    # Удаляем файл
+    os.remove(pdf_filename)
     
-    # Сбрасываем выбранный тип договора
     context.user_data['contract_type'] = None
-    
     await update.message.reply_text(
-        "✅ Готово! Договор отправлен.\n"
+        "✅ Готово! PDF договор отправлен.\n"
         "Чтобы создать новый - нажми /start"
     )
 
 def main():
     app = Application.builder().token(TOKEN).build()
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            generate_contract
-        )
-    )
-    
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_contract))
     print("Bot started...")
     app.run_polling()
 
